@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Campus Bookshop</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: 2em auto; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #ccc; padding: 6px; text-align: left; }
+    input { width: 4em; }
+    #message { padding: 8px; min-height: 1.2em; }
+    .error { background: #fde2e2; color: #8a1c1c; }
+    .success { background: #e2f5e2; color: #1c5e1c; }
+  </style>
+</head>
+<body>
+  <h1>Campus Bookshop</h1>
+  <p id="message" role="status"></p>
+
+  <h2>Books</h2>
+  <table id="books">
+    <thead>
+      <tr>
+        <th>Title</th><th>Author</th><th>Price</th>
+        <th>Stock</th><th>Quantity</th><th></th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>Your orders</h2>
+  <ul id="orders"></ul>
+
+  <script>
+    const titles = {};
+
+    function showMessage(text, isError) {
+      const message = document.getElementById("message");
+      message.textContent = text;
+      message.className = isError ? "error" : "success";
+    }
+
+    function cell(text) {
+      const td = document.createElement("td");
+      td.textContent = text;
+      return td;
+    }
+
+    async function loadBooks() {
+      const tbody = document.querySelector("#books tbody");
+      try {
+        const response = await fetch("/api/books");
+        if (!response.ok) throw new Error("status " + response.status);
+        const books = await response.json();
+        tbody.innerHTML = "";
+        for (const book of books) {
+          titles[book.id] = book.title;
+          const row = document.createElement("tr");
+          row.append(cell(book.title), cell(book.author),
+                     cell("£" + book.price.toFixed(2)), cell(book.stock));
+
+          const quantity = document.createElement("input");
+          quantity.type = "number";
+          quantity.min = "1";
+          quantity.value = "1";
+          quantity.setAttribute("aria-label", "Quantity for " + book.title);
+          const quantityCell = document.createElement("td");
+          quantityCell.append(quantity);
+
+          const buy = document.createElement("button");
+          buy.textContent = "Buy";
+          buy.disabled = book.stock === 0;
+          buy.addEventListener("click",
+            () => placeOrder(book.id, Number(quantity.value)));
+          const buyCell = document.createElement("td");
+          buyCell.append(buy);
+
+          row.append(quantityCell, buyCell);
+          tbody.append(row);
+        }
+      } catch (error) {
+        showMessage("Sorry, the catalogue is unavailable. " +
+                    "Please try again later.", true);
+      }
+    }
+
+    async function loadOrders() {
+      const list = document.getElementById("orders");
+      const response = await fetch("/api/orders");
+      if (!response.ok) return;
+      const orders = await response.json();
+      list.innerHTML = "";
+      for (const order of orders) {
+        const item = document.createElement("li");
+        const title = titles[order.book_id];
+        item.textContent = `Order ${order.id}: ${order.quantity} × ${title}` +
+                           ` (£${order.total.toFixed(2)})`;
+        list.append(item);
+      }
+    }
+
+    async function placeOrder(bookId, quantity) {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ book_id: bookId, quantity: quantity }),
+      });
+      const data = await response.json();
+      if (response.status === 201) {
+        showMessage(`Order ${data.id} placed: ${quantity} × ${titles[bookId]}, ` +
+                    `total £${data.total.toFixed(2)}`, false);
+      } else {
+        showMessage(data.error, true);
+      }
+      await loadBooks();
+      await loadOrders();
+    }
+
+    loadBooks().then(loadOrders);
+  </script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+services:
+  catalogue:
+    build: ./catalogue
+    environment:
+      DB_PATH: /data/catalogue.db
+    volumes:
+      - catalogue-data:/data
+
+  orders:
+    build: ./orders
+    environment:
+      CATALOGUE_URL: http://catalogue:5001
+      DB_PATH: /data/orders.db
+    volumes:
+      - orders-data:/data
+    depends_on:
+      - catalogue
+
+  gateway:
+    build: ./gateway
+    ports:
+      - "5000:5000"
+    environment:
+      CATALOGUE_URL: http://catalogue:5001
+      ORDERS_URL: http://orders:5002
+    depends_on:
+      - catalogue
+      - orders
+
+volumes:
+  catalogue-data:
+  orders-data:
