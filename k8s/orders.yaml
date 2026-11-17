@@ -1,0 +1,65 @@
+# Storage for the orders service's SQLite database that survives when the pod is replaced
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: orders-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 100Mi
+---
+# Keep one orders pod running at all times
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders
+  template:
+    metadata:
+      labels:
+        app: orders
+    spec:
+      containers:
+        - name: orders
+          image: bookshop-orders:1.0
+          ports:
+            - containerPort: 5002
+          env:
+            - name: DB_PATH
+              value: /data/orders.db
+            - name: CATALOGUE_URL
+              value: http://catalogue:5001
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5002
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5002
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: orders-data
+---
+# A stable name (orders) and address for the orders pods
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders
+spec:
+  selector:
+    app: orders
+  ports:
+    - port: 5002
+      targetPort: 5002

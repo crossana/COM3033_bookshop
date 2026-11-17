@@ -1,0 +1,63 @@
+# Storage for the catalogue's SQLite database that survives when the pod is replaced
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: catalogue-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 100Mi
+---
+# Keep one catalogue pod running at all times
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalogue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalogue
+  template:
+    metadata:
+      labels:
+        app: catalogue
+    spec:
+      containers:
+        - name: catalogue
+          image: bookshop-catalogue:1.0
+          ports:
+            - containerPort: 5001
+          env:
+            - name: DB_PATH
+              value: /data/catalogue.db
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: catalogue-data
+---
+# A stable name (catalogue) and address for the catalogue pods
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalogue
+spec:
+  selector:
+    app: catalogue
+  ports:
+    - port: 5001
+      targetPort: 5001
