@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Campus Bookshop</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: 0 auto 2em; color: #222; }
+    header { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 3px solid #1f4e79; }
+    header h1 { margin: 0; flex: 1; color: #1f4e79; }
+    .icon-link { display: inline-block; width: 32px; height: 32px; }
+    .tagline { color: #595959; margin-top: 4px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #ccc; padding: 6px; text-align: left; }
+    td.author, td.price { color: #595959; }
+    input { width: 4em; }
+    #search { width: 16em; padding: 4px; margin-bottom: 8px; }
+    .refresh { padding: 4px 10px; margin-left: 8px; background: #1f4e79; border: none;
+               color: white; border-radius: 4px; cursor: pointer; font-size: 0.9em; }
+    #message { padding: 8px; min-height: 1.2em; }
+    .error { background: #fde2e2; color: #8a1c1c; }
+    .success { background: #e2f5e2; color: #1c5e1c; }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Crect width='48' height='48' rx='8' fill='%231f4e79'/%3E%3Cpath d='M12 14h10a4 4 0 0 1 4 4v18a3 3 0 0 0-3-3H12zM36 14H26a4 4 0 0 0-4 4v18a3 3 0 0 1 3-3h11z' fill='white'/%3E%3C/svg%3E" width="48" height="48" alt="">
+    <h1>Campus Bookshop</h1>
+    <a class="icon-link" href="#orders-heading" aria-label="Your orders">
+      <svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm10 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM5.2 4l.9 2H20l-3 7H8.1l-.9 2H19v2H4l2.3-4.6L3 4H1V2h3.3z" fill="#1f4e79"/>
+      </svg>
+    </a>
+  </header>
+  <p class="tagline">Textbooks for every module, delivered to campus</p>
+  <p id="message" role="status"></p>
+
+  <h2>Books <button type="button" class="refresh" onclick="loadBooks()">Refresh</button></h2>
+  <label for="search">Search by title</label>
+  <input id="search" type="text">
+  <table id="books">
+    <thead>
+      <tr>
+        <th>Title</th><th>Author</th><th>Price</th>
+        <th>Stock</th><th>Quantity</th><th></th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2 id="orders-heading">Your orders</h2>
+  <ul id="orders"></ul>
+
+  <script>
+    const titles = {};
+
+    function showMessage(text, isError) {
+      const message = document.getElementById("message");
+      message.textContent = text;
+      message.className = isError ? "error" : "success";
+    }
+
+    function cell(text, className) {
+      const td = document.createElement("td");
+      td.textContent = text;
+      if (className) td.className = className;
+      return td;
+    }
+
+    function filterBooks() {
+      const term = document.getElementById("search").value.toLowerCase();
+      for (const row of document.querySelectorAll("#books tbody tr")) {
+        row.hidden = !row.cells[0].textContent.toLowerCase().includes(term);
+      }
+    }
+
+    async function loadBooks() {
+      const tbody = document.querySelector("#books tbody");
+      try {
+        const response = await fetch("/api/books");
+        if (!response.ok) throw new Error("status " + response.status);
+        const books = await response.json();
+        tbody.innerHTML = "";
+        for (const book of books) {
+          titles[book.id] = book.title;
+          const row = document.createElement("tr");
+          row.append(cell(book.title), cell(book.author, "author"),
+                     cell("£" + book.price.toFixed(2), "price"), cell(book.stock));
+
+          const quantity = document.createElement("input");
+          quantity.type = "number";
+          quantity.min = "1";
+          quantity.value = "1";
+          quantity.setAttribute("aria-label", "Quantity for " + book.title);
+          const quantityCell = document.createElement("td");
+          quantityCell.append(quantity);
+
+          const buy = document.createElement("button");
+          buy.textContent = "Buy";
+          buy.disabled = book.stock === 0;
+          buy.addEventListener("click",
+            () => placeOrder(book.id, Number(quantity.value)));
+          const buyCell = document.createElement("td");
+          buyCell.append(buy);
+
+          row.append(quantityCell, buyCell);
+          tbody.append(row);
+        }
+        filterBooks();
+      } catch (error) {
+        showMessage("Sorry, the catalogue is unavailable. " +
+                    "Please try again later.", true);
+      }
+    }
+
+    async function loadOrders() {
+      const list = document.getElementById("orders");
+      const response = await fetch("/api/orders");
+      if (!response.ok) return;
+      const orders = await response.json();
+      list.innerHTML = "";
+      for (const order of orders) {
+        const item = document.createElement("li");
+        const title = titles[order.book_id];
+        item.textContent = `Order ${order.id}: ${order.quantity} × ${title}` +
+                           ` (£${order.total.toFixed(2)})`;
+        list.append(item);
+      }
+    }
+
+    async function placeOrder(bookId, quantity) {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ book_id: bookId, quantity: quantity }),
+      });
+      const data = await response.json();
+      if (response.status === 201) {
+        showMessage(`Order ${data.id} placed: ${quantity} × ${titles[bookId]}, ` +
+                    `total £${data.total.toFixed(2)}`, false);
+      } else {
+        showMessage(data.error, true);
+      }
+      await loadBooks();
+      await loadOrders();
+    }
+
+    document.getElementById("search").addEventListener("input", filterBooks);
+    loadBooks().then(loadOrders);
+  </script>
+</body>
+</html>
